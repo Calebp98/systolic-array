@@ -1,2 +1,6 @@
 obj_*/
 *.vcd
+__pycache__/
+sim_build*/
+results.xml
+.venv/

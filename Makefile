@@ -10,7 +10,7 @@ RTL_ALL = $(RTL_DIR)/pe.v $(RTL_DIR)/systolic_array.v
 
 VFLAGS = --cc --exe --trace --build -Wall
 
-.PHONY: all test test-pe test-diag test-full clean
+.PHONY: all test test-pe test-diag test-full test-cocotb test-cocotb-pe test-cocotb-array sketch clean
 
 all: test
 
@@ -43,8 +43,24 @@ test-full: $(RTL_ALL) $(TB_DIR)/tb_systolic.cpp
 	@echo "===== Running full integration test ====="
 	./obj_full/sim_systolic
 
+# Cocotb tests (requires: pip install cocotb; and iverilog on PATH)
+test-cocotb: test-cocotb-pe test-cocotb-array
+
+test-cocotb-pe:
+	@echo "===== Running cocotb PE tests ====="
+	$(MAKE) -C $(TB_DIR) -f Makefile.cocotb TEST_TARGET=pe
+
+test-cocotb-array:
+	@echo "===== Running cocotb systolic array tests ====="
+	$(MAKE) -C $(TB_DIR) -f Makefile.cocotb
+
+# Scratch pad — edit tb/sketch.py, then: make sketch
+sketch:
+	$(MAKE) -C $(TB_DIR) -f Makefile.cocotb TEST_TARGET=sketch
+
 wave-diag: test-diag
 	open -a gtkwave diag.vcd
 
 clean:
 	rm -rf obj_pe obj_diag obj_full *.vcd
+	rm -rf $(TB_DIR)/sim_build* $(TB_DIR)/results.xml $(TB_DIR)/__pycache__

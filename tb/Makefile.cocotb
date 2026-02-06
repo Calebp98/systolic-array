@@ -1,0 +1,39 @@
+# Cocotb Makefile for systolic array testbenches
+# Uses Icarus Verilog as the simulator
+
+SIM ?= icarus
+TOPLEVEL_LANG ?= verilog
+
+# Use the project venv's cocotb and Homebrew's iverilog.
+# oss-cad-suite bundles Python 3.11 which conflicts with cocotb.
+VENV_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/../.venv)
+ICARUS_BIN_DIR := $(shell brew --prefix icarus-verilog 2>/dev/null)/bin
+
+# Put venv + Homebrew iverilog first on PATH for all shell calls
+export PATH := $(VENV_DIR)/bin:$(ICARUS_BIN_DIR):$(PATH)
+SHELL := env PATH=$(VENV_DIR)/bin:$(ICARUS_BIN_DIR):$(PATH) /bin/sh
+
+RTL_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/../rtl)
+
+# Select test target: pe, sketch, or array (default)
+ifeq ($(TEST_TARGET),pe)
+    VERILOG_SOURCES = $(RTL_DIR)/pe.v
+    COCOTB_TOPLEVEL = pe
+    COCOTB_TEST_MODULES = test_pe
+    SIM_BUILD = sim_build_pe
+else ifeq ($(TEST_TARGET),sketch)
+    VERILOG_SOURCES = $(RTL_DIR)/pe.v $(RTL_DIR)/systolic_array.v
+    COCOTB_TOPLEVEL = systolic_array
+    COCOTB_TEST_MODULES = sketch
+    SIM_BUILD = sim_build_sketch
+else
+    VERILOG_SOURCES = $(RTL_DIR)/pe.v $(RTL_DIR)/systolic_array.v
+    COCOTB_TOPLEVEL = systolic_array
+    COCOTB_TEST_MODULES = test_systolic_array
+    SIM_BUILD = sim_build_array
+endif
+
+TOPLEVEL = $(COCOTB_TOPLEVEL)
+MODULE = $(COCOTB_TEST_MODULES)
+
+include $(shell $(VENV_DIR)/bin/cocotb-config --makefiles)/Makefile.sim
