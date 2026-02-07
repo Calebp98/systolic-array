@@ -10,7 +10,7 @@ RTL_ALL = $(RTL_DIR)/pe.v $(RTL_DIR)/systolic_array.v
 
 VFLAGS = --cc --exe --trace --build -Wall
 
-.PHONY: all test test-pe test-diag test-full test-cocotb test-cocotb-pe test-cocotb-array sketch clean
+.PHONY: all test test-pe test-diag test-full test-cocotb test-cocotb-pe test-cocotb-array test-cocotb-tiling test-cocotb-mnist test-cocotb-relu test-cocotb-bias test-cocotb-requantize test-cocotb-inference sketch clean
 
 all: test
 
@@ -53,6 +53,30 @@ test-cocotb-pe:
 test-cocotb-array:
 	@echo "===== Running cocotb systolic array tests ====="
 	$(MAKE) -C $(TB_DIR) -f Makefile.cocotb
+
+test-cocotb-tiling:
+	@echo "===== Running cocotb tiling tests ====="
+	$(MAKE) -C $(TB_DIR) -f Makefile.cocotb TEST_TARGET=tiling
+
+test-cocotb-mnist:
+	@echo "===== Running cocotb MNIST inference tests ====="
+	$(MAKE) -C $(TB_DIR) -f Makefile.cocotb TEST_TARGET=mnist
+
+test-cocotb-relu:
+	@echo "===== Running cocotb ReLU tests ====="
+	$(MAKE) -C $(TB_DIR) -f Makefile.cocotb TEST_TARGET=relu
+
+test-cocotb-bias:
+	@echo "===== Running cocotb bias-add tests ====="
+	$(MAKE) -C $(TB_DIR) -f Makefile.cocotb TEST_TARGET=bias
+
+test-cocotb-requantize:
+	@echo "===== Running cocotb requantize tests ====="
+	$(MAKE) -C $(TB_DIR) -f Makefile.cocotb TEST_TARGET=requantize
+
+test-cocotb-inference:
+	@echo "===== Running cocotb inference pipeline tests ====="
+	$(MAKE) -C $(TB_DIR) -f Makefile.cocotb TEST_TARGET=inference
 
 # Scratch pad — edit tb/sketch.py, then: make sketch
 sketch:

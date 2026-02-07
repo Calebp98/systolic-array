@@ -26,6 +26,36 @@ else ifeq ($(TEST_TARGET),sketch)
     COCOTB_TOPLEVEL = systolic_array
     COCOTB_TEST_MODULES = sketch
     SIM_BUILD = sim_build_sketch
+else ifeq ($(TEST_TARGET),tiling)
+    VERILOG_SOURCES = $(RTL_DIR)/pe.v $(RTL_DIR)/systolic_array.v
+    COCOTB_TOPLEVEL = systolic_array
+    COCOTB_TEST_MODULES = test_tiling
+    SIM_BUILD = sim_build_tiling
+else ifeq ($(TEST_TARGET),mnist)
+    VERILOG_SOURCES = $(RTL_DIR)/pe.v $(RTL_DIR)/systolic_array.v
+    COCOTB_TOPLEVEL = systolic_array
+    COCOTB_TEST_MODULES = test_mnist_inference
+    SIM_BUILD = sim_build_mnist
+else ifeq ($(TEST_TARGET),relu)
+    VERILOG_SOURCES = $(RTL_DIR)/relu.v
+    COCOTB_TOPLEVEL = relu
+    COCOTB_TEST_MODULES = test_relu
+    SIM_BUILD = sim_build_relu
+else ifeq ($(TEST_TARGET),bias)
+    VERILOG_SOURCES = $(RTL_DIR)/bias_add.v
+    COCOTB_TOPLEVEL = bias_add
+    COCOTB_TEST_MODULES = test_bias_add
+    SIM_BUILD = sim_build_bias
+else ifeq ($(TEST_TARGET),requantize)
+    VERILOG_SOURCES = $(RTL_DIR)/requantize.v
+    COCOTB_TOPLEVEL = requantize
+    COCOTB_TEST_MODULES = test_requantize
+    SIM_BUILD = sim_build_requantize
+else ifeq ($(TEST_TARGET),inference)
+    VERILOG_SOURCES = $(RTL_DIR)/pe.v $(RTL_DIR)/systolic_array.v $(RTL_DIR)/relu.v $(RTL_DIR)/bias_add.v $(RTL_DIR)/requantize.v $(RTL_DIR)/inference_top.v
+    COCOTB_TOPLEVEL = inference_top
+    COCOTB_TEST_MODULES = test_inference_top
+    SIM_BUILD = sim_build_inference
 else
     VERILOG_SOURCES = $(RTL_DIR)/pe.v $(RTL_DIR)/systolic_array.v
     COCOTB_TOPLEVEL = systolic_array
