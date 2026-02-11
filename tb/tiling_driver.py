@@ -79,6 +79,10 @@ class TilingDriver:
     def __init__(self, dut):
         self.dut = dut
 
+    async def multiply_tile(self, A_tile, B_tile):
+        """Run a single 4x4 hardware multiply. Subclasses can override."""
+        return await run_multiply_4x4(self.dut, A_tile, B_tile)
+
     async def matmul(self, A, B):
         """Multiply A (M x K) by B (K x N) using tiled 4x4 hardware matmuls.
 
@@ -117,7 +121,7 @@ class TilingDriver:
                     B_tile[:k_end - k_start, :j_end - j_start] = \
                         B[k_start:k_end, j_start:j_end]
 
-                    hw_result = await run_multiply_4x4(self.dut, A_tile, B_tile)
+                    hw_result = await self.multiply_tile(A_tile, B_tile)
                     acc += hw_result
 
                 # Write accumulated result back (only valid portion)

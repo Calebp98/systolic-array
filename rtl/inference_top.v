@@ -1,7 +1,8 @@
 // Integrated inference pipeline: systolic_array → bias_add → relu → requantize
 // Processes one 4x4 tile through the full pipeline per invocation.
 //
-// FSM: IDLE → MATMUL (run systolic array) → POST (bias+relu+requant, 1 cycle) → DONE
+// FSM: IDLE → MATMUL (run systolic array; done when sa_done fires) → IDLE
+// Post-processing is purely combinational, so results are valid immediately.
 //
 // Interface:
 //   - Load a_data, b_data, bias_data, shift_amount, then pulse start
@@ -47,8 +48,6 @@ module inference_top #(
     // FSM states
     localparam IDLE   = 4'd0;
     localparam MATMUL = 4'd1;
-    localparam POST   = 4'd2;
-    localparam DONE   = 4'd3;
 
     reg [3:0] state;
     assign state_out = state;
@@ -77,56 +76,81 @@ module inference_top #(
     assign result_acc = sa_result;
 
     // Post-processing chain (combinational)
-    // Step 1: Bias addition — add bias[j] to each element in column j
+
+    // Step 1: Bias addition — one bias_add per row, broadcasting bias[j] across columns
+    // bias_add expects matched-width element pairs, so we expand bias_data to N*N elements
+    wire signed [N*N*ACC_WIDTH-1:0] bias_expanded;
+    wire signed [N*N*ACC_WIDTH-1:0] bias_add_out;
     wire signed [N*N*ACC_WIDTH-1:0] after_bias;
 
     genvar gi, gj;
     generate
-        for (gi = 0; gi < N; gi = gi + 1) begin : gen_bias_row
+        for (gi = 0; gi < N; gi = gi + 1) begin : gen_bias_expand
             for (gj = 0; gj < N; gj = gj + 1) begin : gen_bias_col
-                wire signed [ACC_WIDTH-1:0] sa_val = sa_result[(gi*N+gj)*ACC_WIDTH +: ACC_WIDTH];
-                wire signed [ACC_WIDTH-1:0] b_val  = bias_data[gj*ACC_WIDTH +: ACC_WIDTH];
-                assign after_bias[(gi*N+gj)*ACC_WIDTH +: ACC_WIDTH] =
-                    enable_bias ? (sa_val + b_val) : sa_val;
+                assign bias_expanded[(gi*N+gj)*ACC_WIDTH +: ACC_WIDTH] =
+                    bias_data[gj*ACC_WIDTH +: ACC_WIDTH];
             end
         end
     endgenerate
+
+    bias_add #(
+        .DATA_WIDTH(ACC_WIDTH),
+        .N_ELEM(N*N)
+    ) u_bias_add (
+        .data_in(sa_result),
+        .bias(bias_expanded),
+        .data_out(bias_add_out)
+    );
+
+    // Enable mux: select between biased and raw result
+    assign after_bias = enable_bias ? bias_add_out : sa_result;
 
     // Step 2: ReLU
+    wire [N*N*ACC_WIDTH-1:0] relu_out;
     wire [N*N*ACC_WIDTH-1:0] after_relu;
 
-    generate
-        for (gi = 0; gi < N; gi = gi + 1) begin : gen_relu_row
-            for (gj = 0; gj < N; gj = gj + 1) begin : gen_relu_col
-                wire signed [ACC_WIDTH-1:0] val = after_bias[(gi*N+gj)*ACC_WIDTH +: ACC_WIDTH];
-                assign after_relu[(gi*N+gj)*ACC_WIDTH +: ACC_WIDTH] =
-                    (enable_relu && val[ACC_WIDTH-1]) ? {ACC_WIDTH{1'b0}} : val;
-            end
-        end
-    endgenerate
+    relu #(
+        .DATA_WIDTH(ACC_WIDTH),
+        .N_ELEM(N*N)
+    ) u_relu (
+        .data_in(after_bias),
+        .data_out(relu_out)
+    );
+
+    // Enable mux: select between ReLU'd and bypass
+    assign after_relu = enable_relu ? relu_out : after_bias;
 
     assign result_post = after_relu;
 
     // Step 3: Requantize (int32 → int8)
+    wire [N*N*DATA_WIDTH-1:0] requant_out;
+    wire [N*N*DATA_WIDTH-1:0] after_requant;
+
+    requantize #(
+        .IN_WIDTH(ACC_WIDTH),
+        .OUT_WIDTH(DATA_WIDTH),
+        .N_ELEM(N*N)
+    ) u_requantize (
+        .data_in(after_relu),
+        .shift_amount(shift_amount),
+        .data_out(requant_out)
+    );
+
+    // Enable mux: select between requantized and raw truncation
     generate
-        for (gi = 0; gi < N; gi = gi + 1) begin : gen_req_row
-            for (gj = 0; gj < N; gj = gj + 1) begin : gen_req_col
+        for (gi = 0; gi < N; gi = gi + 1) begin : gen_req_bypass_row
+            for (gj = 0; gj < N; gj = gj + 1) begin : gen_req_bypass_col
                 wire signed [ACC_WIDTH-1:0] val = after_relu[(gi*N+gj)*ACC_WIDTH +: ACC_WIDTH];
-                wire signed [ACC_WIDTH-1:0] shifted = val >>> shift_amount;
-                wire overflow_pos = !shifted[ACC_WIDTH-1] && (shifted > 127);
-                wire overflow_neg = shifted[ACC_WIDTH-1] && (shifted < -128);
-                wire signed [DATA_WIDTH-1:0] clamped =
-                    enable_requant ? (
-                        overflow_pos ? 8'sd127 :
-                        overflow_neg ? -8'sd128 :
-                        shifted[DATA_WIDTH-1:0]
-                    ) : val[DATA_WIDTH-1:0];
-                assign result_quant[(gi*N+gj)*DATA_WIDTH +: DATA_WIDTH] = clamped;
+                assign after_requant[(gi*N+gj)*DATA_WIDTH +: DATA_WIDTH] =
+                    enable_requant ? requant_out[(gi*N+gj)*DATA_WIDTH +: DATA_WIDTH]
+                                   : val[DATA_WIDTH-1:0];
             end
         end
     endgenerate
 
-    // FSM
+    assign result_quant = after_requant;
+
+    // FSM — no POST state; post-processing is combinational
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             state    <= IDLE;
@@ -145,16 +169,10 @@ module inference_top #(
                 end
 
                 MATMUL: begin
-                    // Wait for systolic array to finish (returns to IDLE)
                     if (sa_done) begin
-                        state <= POST;
+                        done  <= 1;
+                        state <= IDLE;
                     end
-                end
-
-                POST: begin
-                    // Post-processing is combinational, result is ready
-                    done  <= 1;
-                    state <= IDLE;
                 end
 
                 default: state <= IDLE;
